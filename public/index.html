@@ -88,6 +88,15 @@
   .consequence-label { font-weight: 700; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
   .cred-warning { font-size: 0.7rem; color: var(--red); margin-top: 4px; font-style: italic; }
   .cred-safe { font-size: 0.7rem; color: var(--green); margin-top: 4px; font-style: italic; }
+  .base-loyalty { font-size: 0.7rem; color: var(--blue); margin-top: 2px; font-style: italic; }
+
+  /* How it works panel */
+  .info-panel { max-width: 500px; width: 100%; background: var(--card); border-radius: 12px; padding: 14px; border-left: 3px solid var(--blue); }
+  .info-panel summary { font-size: 0.75rem; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; cursor: pointer; font-weight: 700; }
+  .info-panel p { font-size: 0.72rem; color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
+  .info-panel strong { color: var(--text); }
+  .info-panel .info-rule { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; font-size: 0.72rem; color: var(--text-dim); }
+  .info-panel .info-rule .emoji { flex-shrink: 0; }
 
   .confirm-row { display: flex; gap: 12px; align-items: center; }
   .submit-count { font-size: 0.8rem; color: var(--text-dim); }
@@ -214,7 +223,8 @@
 <div id="gameOver" class="screen">
   <div class="winner-crown">👑</div>
   <div class="winner-party" id="winnerParty"></div>
-  <p class="subtitle">wins the election!</p>
+  <p class="subtitle" id="winnerSubtitle">wins the election!</p>
+  <p class="subtitle" style="font-size:0.8rem;color:var(--accent);margin-top:-8px;">First Past The Post — highest vote share wins</p>
   <div class="leaderboard" id="finalLeaderboard"></div>
   <button class="btn btn-accent" onclick="location.reload()">Play Again</button>
 </div>
@@ -224,6 +234,8 @@ let ws, myPlayerId = null, myParty = null, isHost = false;
 let parties = {}, timerInterval = null, selectedPosition = null, confirmed = false;
 let currentRoundData = null; // store round data for consequence previews
 let previousLeaderboard = {}; // store previous shares for animation deltas
+let botParties = []; // party keys controlled by AI
+let botInfo = []; // { partyKey, name, color } for display
 
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
@@ -259,7 +271,17 @@ function handleMsg(msg) {
       showScreen("lobby"); break;
     case "error": toast(msg.msg); break;
     case "lobbyUpdate": renderLobby(msg); break;
-    case "gameStart": parties = msg.parties; showScreen("game"); break;
+    case "gameStart":
+      parties = msg.parties;
+      if (msg.bots && msg.bots.length > 0) {
+        botInfo = msg.bots;
+        botParties = msg.bots.map(b => b.partyKey);
+        // Notify about the AI spoiler
+        const botNames = msg.bots.map(b => b.name).join(', ');
+        setTimeout(() => toast(`🤖 ${botNames} joins as AI spoiler!`), 500);
+      }
+      showScreen("game");
+      break;
     case "newRound": renderRound(msg); break;
     case "positionAck":
       confirmed = true;
@@ -372,23 +394,37 @@ function buildConsequenceHTML(posVal) {
 
   let html = '<div class="pos-consequence">';
 
+  // Check which of the consequences are base blocs
+  const myPartyData = parties[myParty] || {};
+  const myBases = new Set(myPartyData.baseBlocs || []);
+  const baseInSupport = supporters.filter(c => myBases.has(c.name));
+  const baseInOpponents = opponents.filter(c => myBases.has(c.name));
+
   if (supporters.length > 0) {
     const supportPct = supporters.reduce((sum, c) => sum + c.size, 0);
     html += `<div class="consequence-row consequence-supporters">
-      <span class="emoji">💚</span> <strong>${supportPct}% electorate</strong> leans your way — ${supporters.map(c => c.name).join(', ')}
+      <span class="emoji">💚</span> <strong>${supportPct}% electorate</strong> leans your way — ${supporters.map(c => myBases.has(c.name) ? `<strong>${c.name} ★</strong>` : c.name).join(', ')}
     </div>`;
   }
   if (opponents.length > 0) {
     const oppPct = opponents.reduce((sum, c) => sum + c.size, 0);
     html += `<div class="consequence-row consequence-opponents">
-      <span class="emoji">⚠️</span> <strong>${oppPct}% electorate</strong> turns away — ${opponents.map(c => c.name).join(', ')}
+      <span class="emoji">⚠️</span> <strong>${oppPct}% electorate</strong> turns away — ${opponents.map(c => myBases.has(c.name) ? `<strong>${c.name} ★</strong>` : c.name).join(', ')}
     </div>`;
   }
   if (neutrals.length > 0) {
     const neutPct = neutrals.reduce((sum, c) => sum + c.size, 0);
     html += `<div class="consequence-row consequence-neutral">
-      <span class="emoji">😐</span> <strong>${neutPct}%</strong> on the fence — ${neutrals.map(c => c.name).join(', ')}
+      <span class="emoji">😐</span> <strong>${neutPct}%</strong> on the fence — ${neutrals.map(c => myBases.has(c.name) ? `<strong>${c.name} ★</strong>` : c.name).join(', ')}
     </div>`;
+  }
+
+  // Base loyalty note
+  if (baseInSupport.length > 0) {
+    html += `<div class="base-loyalty">★ ${baseInSupport.map(c => c.name).join(', ')} = your base (25% loyalty bonus)</div>`;
+  }
+  if (baseInOpponents.length > 0) {
+    html += `<div class="cred-warning">★ Warning: ${baseInOpponents.map(c => c.name).join(', ')} is your base but this stance pushes them away</div>`;
   }
 
   // Credibility warning
@@ -453,9 +489,22 @@ function renderRound(msg) {
     <div class="blocs-title">Voter Blocs — preference on "${msg.issue.axis}" axis</div>
     <div class="blocs-grid">`;
   msg.voterBlocs.forEach(b => {
-    html += `<div class="bloc-item"><span>${b.name} (${b.size}%)</span><span class="bloc-pref">wants: ${b.prefs[msg.issue.axis]}</span></div>`;
+    const isMyBase = myPartyData.baseBlocs && myPartyData.baseBlocs.includes(b.name);
+    html += `<div class="bloc-item" ${isMyBase ? 'style="border-left:2px solid var(--accent);"' : ''}>
+      <span>${isMyBase ? '★ ' : ''}${b.name} (${b.size}%)</span>
+      <span class="bloc-pref">wants: ${b.prefs[msg.issue.axis]}</span>
+    </div>`;
   });
   html += `</div></div>`;
+
+  // How base works info panel
+  html += `<details class="info-panel">
+    <summary>How does your base work?</summary>
+    <div class="info-rule"><span class="emoji">★</span><span>Your base blocs (marked with ★) give you a <strong>25% loyalty bonus</strong> — even if another party picks the same position, your base voters lean toward you.</span></div>
+    <div class="info-rule"><span class="emoji">🎯</span><span><strong>Playing your DNA position</strong> aligns you with your base's natural preferences AND keeps credibility safe. It's your "home turf" advantage.</span></div>
+    <div class="info-rule"><span class="emoji">⚠️</span><span><strong>Loyalty isn't unconditional.</strong> If you take a stance far from what your base wants, the alignment penalty can overwhelm the loyalty bonus. You can lose your own base.</span></div>
+    <div class="info-rule"><span class="emoji">🏆</span><span><strong>First Past The Post:</strong> You don't need 50%. Just get more votes than everyone else. The AI spoiler and other parties will split the vote — use that to your advantage.</span></div>
+  </details>`;
 
   body.innerHTML = html;
 
@@ -504,12 +553,13 @@ function renderResults(msg) {
   document.getElementById("resultsTitle").textContent = `Round ${msg.round}/${msg.total}`;
   document.getElementById("resultsIssue").textContent = msg.issue.title;
 
-  // Position chips
+  // Position chips (mark bots)
   const posEl = document.getElementById("resultsPositions");
   posEl.innerHTML = Object.entries(msg.positions).map(([pk, pos]) => {
     const p = parties[pk];
+    const isBot = botParties.includes(pk);
     return `<div class="result-chip" style="background:${p.color}22;border:1px solid ${p.color}">
-      <span style="color:${p.color}">${p.name}</span>
+      <span style="color:${p.color}">${p.name}${isBot ? ' 🤖' : ''}</span>
       <span class="result-pos">${pos}</span>
     </div>`;
   }).join("");
@@ -605,9 +655,10 @@ function renderAnimatedLeaderboard(containerId, leaderboard) {
     // Start bar at previous width, will animate to current
     const prevWidth = prevShare > 0 ? (prevShare / maxShare) * 100 : 0;
 
+    const isBot = l.isBot || botParties.includes(l.party);
     return `<div class="lb-row">
       <span class="lb-rank">${i + 1}</span>
-      <span class="lb-party" style="color:${l.color}">${l.name}</span>
+      <span class="lb-party" style="color:${l.color}">${l.name}${isBot ? ' 🤖' : ''}</span>
       <div class="lb-bar-container">
         <div class="lb-bar" data-target="${(l.share / maxShare) * 100}" style="width:${prevWidth}%;background:${l.color}"></div>
       </div>
@@ -647,24 +698,29 @@ function animateNumber(el, from, to, duration) {
 function renderLeaderboard(containerId, leaderboard) {
   const maxShare = Math.max(...leaderboard.map(l => l.share), 1);
   const el = document.getElementById(containerId);
-  el.innerHTML = leaderboard.map((l, i) => `
-    <div class="lb-row">
+  el.innerHTML = leaderboard.map((l, i) => {
+    const isBot = l.isBot || botParties.includes(l.party);
+    return `<div class="lb-row">
       <span class="lb-rank">${i + 1}</span>
-      <span class="lb-party" style="color:${l.color}">${l.name}</span>
+      <span class="lb-party" style="color:${l.color}">${l.name}${isBot ? ' 🤖' : ''}</span>
       <div class="lb-bar-container">
         <div class="lb-bar" style="width:${(l.share / maxShare) * 100}%;background:${l.color}"></div>
       </div>
       <span class="lb-share">${l.share}%</span>
-    </div>
-  `).join("");
+    </div>`;
+  }).join("");
 }
 
 function renderGameOver(msg) {
   showScreen("gameOver");
   clearInterval(timerInterval);
   const winner = msg.leaderboard[0];
-  document.getElementById("winnerParty").textContent = winner.name;
+  const isBot = winner.isBot || botParties.includes(winner.party);
+  document.getElementById("winnerParty").textContent = winner.name + (isBot ? ' 🤖' : '');
   document.getElementById("winnerParty").style.color = winner.color;
+  document.getElementById("winnerSubtitle").textContent = isBot
+    ? 'The AI spoiler wins! No human party could get the most votes.'
+    : `wins with ${winner.share}% — First Past The Post!`;
   renderLeaderboard("finalLeaderboard", msg.leaderboard);
 }
 </script>

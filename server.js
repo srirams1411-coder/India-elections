@@ -3,18 +3,17 @@ const express = require("express");
 const http = require("http");
 const { WebSocketServer } = require("ws");
 const path = require("path");
- 
+
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
- 
+
 app.use(express.static(path.join(__dirname, "public")));
- 
+
 // ══════════════════════════════════════════════════════════════════════
 // GAME DATA
 // ══════════════════════════════════════════════════════════════════════
- 
-// Parties and their DNA (home position on each issue axis, 1-5 scale)
+
 const PARTIES = {
   bjp: {
     name: "BJP",
@@ -65,14 +64,13 @@ const PARTIES = {
     baseBlocs: ["Dalit", "OBC (Other Backward Classes)"],
   },
 };
- 
-// Voter blocs with preferences on each axis (1-5) and size (% of electorate)
+
 const VOTER_BLOCS = [
   {
     name: "Urban Middle Class",
     size: 12,
     prefs: { economy: 4, identity: 3, welfare: 2, federalism: 3, governance: 5 },
-    hardFloor: { governance: 3 }, // won't vote for party below 3 on governance
+    hardFloor: { governance: 3 },
   },
   {
     name: "Rural Landowners",
@@ -102,8 +100,8 @@ const VOTER_BLOCS = [
     name: "Muslim Minority",
     size: 12,
     prefs: { economy: 2, identity: 1, welfare: 4, federalism: 4, governance: 3 },
-    hardFloor: { identity: 1 }, // actually: won't vote for identity > 4
-    hardCeiling: { identity: 3 }, // won't vote for party with identity > 3
+    hardFloor: { identity: 1 },
+    hardCeiling: { identity: 3 },
   },
   {
     name: "Dalit",
@@ -130,8 +128,7 @@ const VOTER_BLOCS = [
     hardFloor: {},
   },
 ];
- 
-// Issues pool — each round picks one
+
 const ISSUES = [
   {
     id: "fuel",
@@ -232,7 +229,7 @@ const ISSUES = [
   {
     id: "china",
     title: "China incursion at LAC (Line of Actual Control) — 20 km inside Indian territory",
-    axis: "identity", // using identity as proxy for nationalism
+    axis: "identity",
     positions: [
       "Diplomatic channels only, avoid escalation",
       "Strong diplomatic note + economic pressure",
@@ -254,8 +251,7 @@ const ISSUES = [
     ],
   },
 ];
- 
-// Events that can shift voter mood (triggered every 3rd round)
+
 const EVENTS = [
   { text: "GDP growth hits 8% — business confidence soars", shift: { axis: "economy", direction: 1, blocs: ["Business & Traders", "Urban Middle Class"] } },
   { text: "Communal riots in 3 cities — secularism in crisis", shift: { axis: "identity", direction: -1, blocs: ["Muslim Minority", "Youth (18-30)"] } },
@@ -264,20 +260,55 @@ const EVENTS = [
   { text: "Border tensions escalate — patriotic mood rises", shift: { axis: "identity", direction: 1, blocs: ["Upper Caste Hindu", "OBC (Other Backward Classes)"] } },
   { text: "Tech layoffs — 2 lakh jobs lost in IT sector", shift: { axis: "economy", direction: -1, blocs: ["Urban Middle Class", "Youth (18-30)"] } },
 ];
- 
+
+// ══════════════════════════════════════════════════════════════════════
+// AI BOT — spoiler third party
+// ══════════════════════════════════════════════════════════════════════
+
+// Bot picks a position: mostly DNA, occasionally 1 step toward voter center
+function chooseBotPosition(partyKey, axis, voterBlocs, credibility) {
+  const dna = PARTIES[partyKey].dna[axis];
+  const cred = credibility[partyKey] || 10;
+
+  // Find the weighted center of gravity of voter blocs on this axis
+  let totalWeight = 0, weightedSum = 0;
+  for (const bloc of voterBlocs) {
+    totalWeight += bloc.size;
+    weightedSum += bloc.prefs[axis] * bloc.size;
+  }
+  const voterCenter = totalWeight > 0 ? weightedSum / totalWeight : 3;
+
+  // If credibility is low, always play DNA to recover
+  if (cred < 5) return dna;
+
+  // 60% DNA, 30% step toward voter center, 10% wild card
+  const roll = Math.random();
+  if (roll < 0.6) {
+    return dna;
+  } else if (roll < 0.9) {
+    if (voterCenter > dna && dna < 5) return dna + 1;
+    if (voterCenter < dna && dna > 1) return dna - 1;
+    return dna;
+  } else {
+    if (voterCenter > dna && dna > 1) return dna - 1;
+    if (voterCenter < dna && dna < 5) return dna + 1;
+    return dna;
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // GAME ENGINE
 // ══════════════════════════════════════════════════════════════════════
- 
+
 const rooms = new Map();
- 
+
 function generateCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
   for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
   return code;
 }
- 
+
 function shuffle(arr) {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -285,63 +316,68 @@ function shuffle(arr) {
   }
   return arr;
 }
- 
+
 function createGameState() {
   const issuePool = shuffle([...ISSUES]).slice(0, 5);
   return {
     issues: issuePool,
     currentRound: -1,
     totalRounds: 5,
-    voterBlocs: JSON.parse(JSON.stringify(VOTER_BLOCS)), // deep copy — prefs can shift
-    positions: {}, // { roundIndex: { partyKey: positionValue (1-5) } }
-    voteShare: {}, // { partyKey: totalVoteShare }
-    credibility: {}, // { partyKey: number }
-    roundResults: [], // history of each round's results
+    voterBlocs: JSON.parse(JSON.stringify(VOTER_BLOCS)),
+    positions: {},
+    voteShare: {},
+    credibility: {},
+    roundResults: [],
+    bots: [], // array of { partyKey } for AI-controlled parties
   };
 }
- 
+
 // Calculate vote share for a single round
 function calculateRoundVotes(game, roundIndex, players) {
   const issue = game.issues[roundIndex];
   const axis = issue.axis;
   const roundPositions = game.positions[roundIndex] || {};
- 
-  // Get active party keys
   const partyKeys = Object.keys(roundPositions);
- 
+
   const blocResults = [];
   const partyVotes = {};
   partyKeys.forEach(pk => { partyVotes[pk] = 0; });
- 
+
   for (const bloc of game.voterBlocs) {
-    const blocPref = bloc.prefs[axis]; // what this bloc wants on the live axis (1-5)
+    const blocPref = bloc.prefs[axis];
     const scores = {};
- 
+
     for (const pk of partyKeys) {
       const position = roundPositions[pk];
-      const party = PARTIES[pk];
- 
-      // 1. Alignment score: how close is position to bloc preference (0-1)
+
+      // 1. Alignment score
       const distance = Math.abs(position - blocPref);
-      let alignment = Math.max(0, 1 - distance / 4); // 0 distance = 1.0, 4 distance = 0.0
- 
-      // 2. Hard floor check: if bloc has a minimum, party must meet it
+      let alignment = Math.max(0, 1 - distance / 4);
+
+      // 2. Hard floor/ceiling checks
       if (bloc.hardFloor && bloc.hardFloor[axis] !== undefined) {
-        if (position < bloc.hardFloor[axis]) alignment *= 0.1; // near-zero
+        if (position < bloc.hardFloor[axis]) alignment *= 0.1;
       }
-      // Hard ceiling check (e.g., Muslim bloc won't vote for high identity)
       if (bloc.hardCeiling && bloc.hardCeiling[axis] !== undefined) {
         if (position > bloc.hardCeiling[axis]) alignment *= 0.1;
       }
- 
+
       // 3. Credibility modifier
       const cred = game.credibility[pk] || 10;
-      const credMod = 0.5 + 0.5 * (cred / 10); // ranges from 0.5 to 1.0
- 
-      scores[pk] = alignment * credMod;
+      const credMod = 0.5 + 0.5 * (cred / 10);
+
+      // 4. Base loyalty bonus — your base blocs give you a 25% score bonus
+      // This means even if another party matches the bloc's preference equally,
+      // the "home" party still has an edge with its base voters.
+      // But it's not a guaranteed lock — a big alignment gap can still override it.
+      const party = PARTIES[pk];
+      const isBase = party.baseBlocs && party.baseBlocs.includes(bloc.name);
+      const loyaltyBonus = isBase ? 1.25 : 1.0;
+
+      scores[pk] = alignment * credMod * loyaltyBonus;
     }
- 
-    // 4. Crowding penalty: if two parties have same position, split effectiveness
+
+    // 5. Crowding penalty
     const positionCounts = {};
     partyKeys.forEach(pk => {
       const pos = roundPositions[pk];
@@ -350,11 +386,11 @@ function calculateRoundVotes(game, roundIndex, players) {
     for (const pk of partyKeys) {
       const pos = roundPositions[pk];
       if (positionCounts[pos] > 1) {
-        scores[pk] *= (1 / positionCounts[pos]); // split equally
+        scores[pk] *= (1 / positionCounts[pos]);
       }
     }
- 
-    // 5. Distribute bloc votes proportionally by score
+
+    // 6. Distribute bloc votes proportionally
     const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
     const blocVoteDistribution = {};
     if (totalScore > 0) {
@@ -364,7 +400,7 @@ function calculateRoundVotes(game, roundIndex, players) {
         blocVoteDistribution[pk] = Math.round((scores[pk] / totalScore) * 100);
       }
     }
- 
+
     blocResults.push({
       name: bloc.name,
       size: bloc.size,
@@ -372,34 +408,29 @@ function calculateRoundVotes(game, roundIndex, players) {
       distribution: blocVoteDistribution,
     });
   }
- 
+
   return { partyVotes, blocResults };
 }
- 
-// Update credibility based on how far from DNA
+
 function updateCredibility(game, roundIndex) {
   const issue = game.issues[roundIndex];
   const axis = issue.axis;
   const roundPositions = game.positions[roundIndex] || {};
- 
+
   for (const pk of Object.keys(roundPositions)) {
     const position = roundPositions[pk];
     const dna = PARTIES[pk].dna[axis];
     const drift = Math.abs(position - dna);
- 
-    // Free zone: 1 step. Beyond that: penalty
+
     if (drift <= 1) {
-      // Staying close: recover 0.5 credibility (up to 10)
       game.credibility[pk] = Math.min(10, (game.credibility[pk] || 10) + 0.5);
     } else {
-      // Penalty: (drift - 1)^1.5 — moderate to large
       const penalty = Math.pow(drift - 1, 1.5);
       game.credibility[pk] = Math.max(0, (game.credibility[pk] || 10) - penalty);
     }
   }
 }
- 
-// Apply event shift to voter bloc preferences
+
 function applyEvent(game, event) {
   for (const bloc of game.voterBlocs) {
     if (event.shift.blocs.includes(bloc.name)) {
@@ -408,48 +439,54 @@ function applyEvent(game, event) {
     }
   }
 }
- 
+
+// Count total parties in the game (humans + bots)
+function getTotalPartyCount(room) {
+  return room.players.size + (room.game ? room.game.bots.length : 0);
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // NETWORKING
 // ══════════════════════════════════════════════════════════════════════
- 
+
 function broadcast(room, msg) {
   const data = JSON.stringify(msg);
   for (const p of room.players.values()) {
     if (p.ws.readyState === 1) p.ws.send(data);
   }
 }
- 
+
 function sendToPlayer(room, playerId, msg) {
   const p = room.players.get(playerId);
   if (p && p.ws.readyState === 1) p.ws.send(JSON.stringify(msg));
 }
- 
+
 app.get("/debug", (req, res) => {
   const roomList = [...rooms.entries()].map(([code, room]) => ({
     code,
     state: room.state,
     players: [...room.players.values()].map(p => ({ name: p.name, party: p.party })),
+    bots: room.game?.bots || [],
     round: room.game?.currentRound,
   }));
   res.json({ rooms: roomList, uptime: process.uptime() });
 });
- 
+
 wss.on("connection", (ws) => {
   console.log("[WS] New connection");
   let playerId = null;
   let roomCode = null;
- 
+
   ws.on("message", (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
- 
+
     if (msg.type === "createRoom") {
       const code = generateCode();
       const room = {
         code,
         players: new Map(),
-        state: "lobby", // lobby, picking, playing, finished
+        state: "lobby",
         game: null,
         hostId: null,
         timerHandle: null,
@@ -464,7 +501,7 @@ wss.on("connection", (ws) => {
       ws.send(JSON.stringify({ type: "roomCreated", code, playerId }));
       broadcastLobby(room);
     }
- 
+
     if (msg.type === "joinRoom") {
       const tryCode = msg.code?.toUpperCase();
       const room = rooms.get(tryCode);
@@ -477,58 +514,55 @@ wss.on("connection", (ws) => {
       ws.send(JSON.stringify({ type: "joined", playerId, code: room.code }));
       broadcastLobby(room);
     }
- 
+
     if (msg.type === "pickParty") {
       const room = rooms.get(roomCode);
       if (!room || !playerId) return;
       const partyKey = msg.party;
       if (!PARTIES[partyKey]) return;
       if (!room.availableParties.has(partyKey)) return ws.send(JSON.stringify({ type: "error", msg: "Party already taken" }));
-      // Release previous pick
       const player = room.players.get(playerId);
       if (player.party) room.availableParties.add(player.party);
       player.party = partyKey;
       room.availableParties.delete(partyKey);
       broadcastLobby(room);
     }
- 
+
     if (msg.type === "startGame") {
       const room = rooms.get(roomCode);
       if (!room || playerId !== room.hostId) return;
-      // Check all players have a party
       for (const p of room.players.values()) {
         if (!p.party) return ws.send(JSON.stringify({ type: "error", msg: `${p.name} hasn't picked a party` }));
       }
       if (room.players.size < 2) return ws.send(JSON.stringify({ type: "error", msg: "Need at least 2 players" }));
       startGamePlay(room);
     }
- 
+
     if (msg.type === "submitPosition") {
       const room = rooms.get(roomCode);
       if (!room || room.state !== "playing" || !playerId) return;
-      const position = msg.position; // 1-5
+      const position = msg.position;
       if (position < 1 || position > 5) return;
       const player = room.players.get(playerId);
       if (!player || !player.party) return;
       const roundIdx = room.game.currentRound;
       if (!room.game.positions[roundIdx]) room.game.positions[roundIdx] = {};
       room.game.positions[roundIdx][player.party] = position;
- 
-      // Acknowledge
+
       ws.send(JSON.stringify({ type: "positionAck" }));
- 
-      // Broadcast guess count
-      const submitted = Object.keys(room.game.positions[roundIdx]).length;
-      broadcast(room, { type: "submitCount", count: submitted, total: room.players.size });
- 
-      // If all submitted, end round early
-      if (submitted >= room.players.size) {
+
+      // Count human submissions only for the display
+      const humanSubmitted = [...room.players.values()].filter(p => room.game.positions[roundIdx][p.party] !== undefined).length;
+      broadcast(room, { type: "submitCount", count: humanSubmitted, total: room.players.size });
+
+      // If all humans submitted, end round early (bots already submitted)
+      if (humanSubmitted >= room.players.size) {
         clearTimeout(room.timerHandle);
         endRound(room);
       }
     }
   });
- 
+
   ws.on("close", () => {
     if (roomCode) {
       const room = rooms.get(roomCode);
@@ -544,7 +578,7 @@ wss.on("connection", (ws) => {
     }
   });
 });
- 
+
 function broadcastLobby(room) {
   const players = [...room.players.values()].map(p => ({
     id: p.id,
@@ -561,46 +595,72 @@ function broadcastLobby(room) {
     voterBlocs: room.game ? room.game.voterBlocs : VOTER_BLOCS,
   });
 }
- 
+
 function startGamePlay(room) {
   room.state = "playing";
   room.game = createGameState();
-  // Init credibility and vote share
+
+  // Init credibility and vote share for human players
   for (const p of room.players.values()) {
     room.game.credibility[p.party] = 10;
     room.game.voteShare[p.party] = 0;
   }
-  // Send game start
+
+  // If only 2 human players, add a random AI bot as spoiler
+  if (room.players.size === 2) {
+    const humanPartyKeys = [...room.players.values()].map(p => p.party);
+    const botPartyKey = [...room.availableParties][Math.floor(Math.random() * room.availableParties.size)];
+    if (botPartyKey) {
+      room.game.bots.push({ partyKey: botPartyKey });
+      room.game.credibility[botPartyKey] = 10;
+      room.game.voteShare[botPartyKey] = 0;
+      room.availableParties.delete(botPartyKey);
+      console.log(`[BOT] Added ${PARTIES[botPartyKey].name} as AI spoiler`);
+    }
+  }
+
   broadcast(room, {
     type: "gameStart",
     parties: PARTIES,
     voterBlocs: room.game.voterBlocs,
     totalRounds: room.game.totalRounds,
+    bots: room.game.bots.map(b => ({
+      partyKey: b.partyKey,
+      name: PARTIES[b.partyKey].name,
+      fullName: PARTIES[b.partyKey].fullName,
+      color: PARTIES[b.partyKey].color,
+    })),
   });
-  // Start first round
+
   setTimeout(() => nextRound(room), 1500);
 }
- 
+
 function nextRound(room) {
   room.game.currentRound++;
   const roundIdx = room.game.currentRound;
- 
+
   if (roundIdx >= room.game.totalRounds) {
     endGame(room);
     return;
   }
- 
-  // Every 3rd round (rounds 3, 6, 9): apply an event before the issue
+
+  // Every 3rd round: apply event
   let event = null;
   if (roundIdx > 0 && roundIdx % 3 === 0) {
     event = EVENTS[Math.floor(Math.random() * EVENTS.length)];
     applyEvent(room.game, event);
   }
- 
+
   const issue = room.game.issues[roundIdx];
   room.game.positions[roundIdx] = {};
- 
-  // Build per-player info (their DNA position on this axis)
+
+  // Bot auto-submits immediately
+  for (const bot of room.game.bots) {
+    const botPos = chooseBotPosition(bot.partyKey, issue.axis, room.game.voterBlocs, room.game.credibility);
+    room.game.positions[roundIdx][bot.partyKey] = botPos;
+  }
+
+  // Build per-player info (humans + bots)
   const playerInfo = {};
   for (const p of room.players.values()) {
     playerInfo[p.party] = {
@@ -608,7 +668,14 @@ function nextRound(room) {
       credibility: Math.round((room.game.credibility[p.party] || 10) * 10) / 10,
     };
   }
- 
+  for (const bot of room.game.bots) {
+    playerInfo[bot.partyKey] = {
+      dna: PARTIES[bot.partyKey].dna[issue.axis],
+      credibility: Math.round((room.game.credibility[bot.partyKey] || 10) * 10) / 10,
+      isBot: true,
+    };
+  }
+
   broadcast(room, {
     type: "newRound",
     round: roundIdx + 1,
@@ -624,10 +691,9 @@ function nextRound(room) {
     playerInfo,
     timeLimit: 60,
   });
- 
-  // Timer
+
+  // Timer — auto-submit DNA for humans who don't submit
   room.timerHandle = setTimeout(() => {
-    // Auto-submit DNA position for anyone who didn't submit
     for (const p of room.players.values()) {
       if (!room.game.positions[roundIdx][p.party]) {
         room.game.positions[roundIdx][p.party] = PARTIES[p.party].dna[issue.axis];
@@ -636,24 +702,21 @@ function nextRound(room) {
     endRound(room);
   }, 61000);
 }
- 
+
 function endRound(room) {
   const roundIdx = room.game.currentRound;
- 
-  // Calculate votes
+
   const { partyVotes, blocResults } = calculateRoundVotes(room.game, roundIdx, room.players);
- 
+
   // Update cumulative vote share (running average)
   for (const pk of Object.keys(partyVotes)) {
     const prevTotal = room.game.voteShare[pk] || 0;
     const roundsCompleted = roundIdx + 1;
     room.game.voteShare[pk] = ((prevTotal * roundIdx) + partyVotes[pk]) / roundsCompleted;
   }
- 
-  // Update credibility
+
   updateCredibility(room.game, roundIdx);
- 
-  // Store round results
+
   const roundResult = {
     issue: room.game.issues[roundIdx],
     positions: { ...room.game.positions[roundIdx] },
@@ -663,12 +726,19 @@ function endRound(room) {
     cumulativeVoteShare: { ...room.game.voteShare },
   };
   room.game.roundResults.push(roundResult);
- 
-  // Broadcast results
+
+  // Build leaderboard including bots
+  const botKeys = room.game.bots.map(b => b.partyKey);
   const leaderboard = Object.entries(room.game.voteShare)
-    .map(([pk, share]) => ({ party: pk, name: PARTIES[pk].name, color: PARTIES[pk].color, share: Math.round(share * 10) / 10 }))
+    .map(([pk, share]) => ({
+      party: pk,
+      name: PARTIES[pk].name,
+      color: PARTIES[pk].color,
+      share: Math.round(share * 10) / 10,
+      isBot: botKeys.includes(pk),
+    }))
     .sort((a, b) => b.share - a.share);
- 
+
   broadcast(room, {
     type: "roundResults",
     round: roundIdx + 1,
@@ -681,18 +751,25 @@ function endRound(room) {
     ),
     leaderboard,
     issue: room.game.issues[roundIdx],
+    botParties: botKeys,
   });
- 
-  // Next round after delay
+
   room.timerHandle = setTimeout(() => nextRound(room), 8000);
 }
- 
+
 function endGame(room) {
   room.state = "finished";
+  const botKeys = room.game.bots.map(b => b.partyKey);
   const leaderboard = Object.entries(room.game.voteShare)
-    .map(([pk, share]) => ({ party: pk, name: PARTIES[pk].name, color: PARTIES[pk].color, share: Math.round(share * 10) / 10 }))
+    .map(([pk, share]) => ({
+      party: pk,
+      name: PARTIES[pk].name,
+      color: PARTIES[pk].color,
+      share: Math.round(share * 10) / 10,
+      isBot: botKeys.includes(pk),
+    }))
     .sort((a, b) => b.share - a.share);
- 
+
   broadcast(room, {
     type: "gameOver",
     leaderboard,
@@ -703,7 +780,7 @@ function endGame(room) {
     })),
   });
 }
- 
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`\n  🗳️  Election Game running at http://localhost:${PORT}\n`);
