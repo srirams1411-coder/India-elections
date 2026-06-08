@@ -1,241 +1,210 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>GeoPin</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Election Game</title>
 <style>
   :root {
-    --purple: #7c3aed; --purple-dark: #6d28d9; --purple-light: #a78bfa;
-    --green: #10b981; --red: #ef4444; --gold: #f59e0b;
-    --bg: #0f0f1a; --card: #1a1a2e; --card2: #252540;
-    --text: #e2e8f0; --text-dim: #94a3b8;
+    --bg: #0f1729; --card: #1a2332; --card2: #243447;
+    --text: #e8eaed; --text-dim: #8b9bb4; --accent: #f59e0b;
+    --green: #10b981; --red: #ef4444; --blue: #3b82f6;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow: hidden; }
-
-  /* ── Screens ── */
-  .screen { display: none; width: 100vw; height: 100vh; flex-direction: column; align-items: center; justify-content: center; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+  .screen { display: none; width: 100vw; min-height: 100vh; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
   .screen.active { display: flex; }
 
-  /* ── Home ── */
-  #home { gap: 24px; text-align: center; }
-  #home h1 { font-size: 3.5rem; font-weight: 800; background: linear-gradient(135deg, var(--purple-light), var(--green)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-  #home p { color: var(--text-dim); font-size: 1.1rem; margin-top: -12px; }
-  .home-buttons { display: flex; gap: 16px; }
+  h1 { font-size: 2.8rem; font-weight: 800; text-align: center; }
+  h1 .emoji { font-size: 2.4rem; }
+  h2 { font-size: 1.6rem; font-weight: 700; }
+  .subtitle { color: var(--text-dim); font-size: 1rem; margin-top: 4px; text-align: center; }
 
-  /* ── Buttons ── */
-  .btn { padding: 14px 32px; border: none; border-radius: 12px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-  .btn-primary { background: var(--purple); color: #fff; }
-  .btn-primary:hover { background: var(--purple-dark); transform: translateY(-2px); }
-  .btn-secondary { background: var(--card2); color: var(--text); border: 2px solid var(--purple); }
-  .btn-secondary:hover { background: var(--purple); }
-  .btn-green { background: var(--green); color: #fff; }
-  .btn-green:hover { filter: brightness(1.1); transform: translateY(-2px); }
+  .btn { padding: 14px 32px; border: none; border-radius: 12px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: all 0.15s; color: #fff; }
+  .btn-accent { background: var(--accent); }
+  .btn-accent:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-green { background: var(--green); }
+  .btn-blue { background: var(--blue); }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .btn-sm { padding: 10px 20px; font-size: 0.9rem; }
 
-  /* ── Inputs ── */
-  .input-group { display: flex; flex-direction: column; gap: 8px; }
-  .input-group label { font-size: 0.85rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
-  input[type="text"] { padding: 14px 18px; border-radius: 12px; border: 2px solid var(--card2); background: var(--card); color: var(--text); font-size: 1.1rem; text-align: center; outline: none; transition: border-color 0.2s; }
-  input[type="text"]:focus { border-color: var(--purple); }
+  input[type="text"] { padding: 14px 18px; border-radius: 12px; border: 2px solid var(--card2); background: var(--card); color: var(--text); font-size: 1.1rem; text-align: center; outline: none; width: 100%; }
+  input:focus { border-color: var(--accent); }
 
-  /* ── Join / Host forms ── */
-  #joinScreen, #hostScreen { gap: 20px; text-align: center; }
-  #joinScreen h2, #hostScreen h2 { font-size: 1.8rem; }
-  .form-card { background: var(--card); padding: 32px; border-radius: 20px; display: flex; flex-direction: column; gap: 16px; min-width: 320px; }
-  .back-link { color: var(--text-dim); cursor: pointer; font-size: 0.9rem; margin-top: 8px; }
-  .back-link:hover { color: var(--text); }
+  .form-card { background: var(--card); padding: 28px; border-radius: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 300px; max-width: 400px; }
+  .form-label { font-size: 0.8rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+  .back-link { color: var(--text-dim); cursor: pointer; font-size: 0.9rem; margin-top: 10px; }
 
-  /* ── Lobby ── */
-  #lobby { gap: 20px; text-align: center; }
-  .room-code { font-size: 3rem; font-weight: 800; letter-spacing: 8px; color: var(--purple-light); background: var(--card); padding: 16px 40px; border-radius: 16px; }
-  .player-chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; max-width: 500px; }
-  .player-chip { background: var(--card2); padding: 8px 18px; border-radius: 999px; font-size: 0.95rem; }
-  #waitMsg { color: var(--text-dim); font-size: 0.9rem; }
+  /* Home */
+  #home { gap: 20px; }
+  .home-btns { display: flex; gap: 14px; }
 
-  /* ── Game ── */
-  #game { padding: 0; }
-  .game-header { width: 100%; padding: 12px 24px; background: var(--card); display: flex; justify-content: space-between; align-items: center; z-index: 1000; flex-shrink: 0; }
-  .round-info { font-weight: 700; font-size: 1rem; }
-  .city-question { font-size: 1.3rem; font-weight: 700; color: var(--gold); text-align: center; }
-  .timer { font-size: 1.5rem; font-weight: 800; min-width: 48px; text-align: center; }
-  .timer.urgent { color: var(--red); animation: pulse 0.5s infinite alternate; }
-  @keyframes pulse { to { transform: scale(1.15); } }
-  #map { flex: 1; width: 100%; }
-  .confirm-bar { width: 100%; padding: 12px 24px; background: var(--card); display: flex; justify-content: center; gap: 16px; align-items: center; z-index: 1000; flex-shrink: 0; }
-  .confirm-bar .status { color: var(--text-dim); font-size: 0.9rem; }
-  .guess-count-bar { font-size: 0.85rem; color: var(--text-dim); }
+  /* Lobby */
+  #lobby { gap: 16px; }
+  .room-code { font-size: 2.8rem; font-weight: 800; letter-spacing: 8px; color: var(--accent); background: var(--card); padding: 14px 36px; border-radius: 14px; }
+  .party-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; max-width: 600px; width: 100%; margin-top: 12px; }
+  .party-card { padding: 14px; border-radius: 12px; border: 2px solid var(--card2); background: var(--card); cursor: pointer; text-align: center; transition: all 0.15s; }
+  .party-card:hover { border-color: var(--text-dim); }
+  .party-card.selected { border-color: var(--accent); box-shadow: 0 0 12px rgba(245,158,11,0.3); }
+  .party-card.taken { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+  .party-name { font-weight: 700; font-size: 1.1rem; }
+  .party-tag { font-size: 0.7rem; color: var(--text-dim); margin-top: 4px; }
+  .party-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .lobby-players { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
+  .lobby-player { background: var(--card2); padding: 6px 14px; border-radius: 999px; font-size: 0.85rem; }
 
-  /* ── Results ── */
-  #results { gap: 16px; padding: 24px; overflow-y: auto; }
-  #results h2 { font-size: 1.6rem; }
-  .results-city { color: var(--gold); font-size: 1.2rem; font-weight: 600; }
-  .results-table { width: 100%; max-width: 600px; border-collapse: collapse; }
-  .results-table th { color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; padding: 8px 12px; text-align: left; }
-  .results-table td { padding: 10px 12px; border-top: 1px solid var(--card2); }
-  .results-table tr:first-child td { border-top: none; }
-  .rank-1 { color: var(--gold); font-weight: 700; }
-  .dist-val { color: var(--text-dim); font-size: 0.9rem; }
-  .score-val { font-weight: 700; color: var(--green); }
-  .no-guess { color: var(--red); font-style: italic; }
-  #resultsMap { width: 100%; max-width: 600px; height: 250px; border-radius: 12px; overflow: hidden; }
+  /* Game */
+  #game { gap: 0; padding: 0; justify-content: flex-start; }
+  .game-top { width: 100%; padding: 14px 20px; background: var(--card); display: flex; justify-content: space-between; align-items: center; }
+  .round-label { font-weight: 700; font-size: 0.9rem; }
+  .game-timer { font-size: 1.5rem; font-weight: 800; color: var(--accent); }
+  .game-timer.urgent { color: var(--red); animation: pulse 0.5s infinite alternate; }
+  @keyframes pulse { to { transform: scale(1.1); } }
 
-  /* ── Game Over ── */
-  #gameOver { gap: 20px; text-align: center; }
-  #gameOver h2 { font-size: 2.2rem; }
-  .winner-name { font-size: 2.5rem; font-weight: 800; color: var(--gold); }
-  .final-table { width: 100%; max-width: 400px; border-collapse: collapse; }
-  .final-table td { padding: 12px 16px; border-top: 1px solid var(--card2); font-size: 1.1rem; }
-  .final-table .rank { width: 40px; font-weight: 800; }
-  .final-table .pts { text-align: right; font-weight: 700; color: var(--purple-light); }
-  .medal { font-size: 1.4rem; }
+  .game-body { flex: 1; width: 100%; display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 16px; overflow-y: auto; }
 
-  /* ── Error toast ── */
-  .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--red); color: #fff; padding: 12px 24px; border-radius: 12px; font-weight: 600; z-index: 9999; display: none; }
+  .event-banner { background: linear-gradient(135deg, #7c3aed, #4f46e5); padding: 12px 20px; border-radius: 12px; font-size: 0.9rem; font-weight: 600; text-align: center; max-width: 500px; width: 100%; }
+
+  .issue-card { background: var(--card); border-radius: 16px; padding: 24px; max-width: 500px; width: 100%; text-align: center; }
+  .issue-title { font-size: 1.2rem; font-weight: 700; margin-bottom: 4px; }
+  .issue-axis { font-size: 0.8rem; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; }
+  .issue-dna { font-size: 0.8rem; color: var(--text-dim); margin-top: 8px; }
+
+  .position-picker { display: flex; flex-direction: column; gap: 8px; max-width: 500px; width: 100%; }
+  .pos-option { padding: 14px 18px; border-radius: 12px; background: var(--card); border: 2px solid var(--card2); cursor: pointer; display: flex; align-items: center; gap: 12px; transition: all 0.15s; font-size: 0.9rem; }
+  .pos-option:hover { border-color: var(--text-dim); }
+  .pos-option.selected { border-color: var(--accent); background: rgba(245,158,11,0.1); }
+  .pos-option.locked { opacity: 0.6; cursor: not-allowed; }
+  .pos-num { width: 28px; height: 28px; border-radius: 50%; background: var(--card2); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.85rem; flex-shrink: 0; }
+  .pos-option.selected .pos-num { background: var(--accent); color: #000; }
+  .pos-dna-marker { font-size: 0.7rem; color: var(--accent); margin-left: auto; flex-shrink: 0; }
+
+  .confirm-row { display: flex; gap: 12px; align-items: center; }
+  .submit-count { font-size: 0.8rem; color: var(--text-dim); }
+
+  /* Voter blocs panel */
+  .blocs-panel { max-width: 500px; width: 100%; background: var(--card); border-radius: 12px; padding: 14px; }
+  .blocs-title { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .blocs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .bloc-item { font-size: 0.75rem; display: flex; justify-content: space-between; padding: 4px 8px; border-radius: 6px; background: var(--card2); }
+  .bloc-pref { color: var(--accent); font-weight: 700; }
+
+  /* Results */
+  #results { gap: 14px; padding: 20px; overflow-y: auto; }
+  .results-positions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 500px; }
+  .result-chip { padding: 8px 14px; border-radius: 10px; font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .result-pos { width: 24px; height: 24px; border-radius: 50%; background: rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 800; }
+
+  .leaderboard { max-width: 500px; width: 100%; }
+  .lb-row { display: flex; align-items: center; padding: 10px 14px; border-radius: 10px; background: var(--card); margin-bottom: 6px; }
+  .lb-rank { width: 28px; font-weight: 800; color: var(--accent); }
+  .lb-party { flex: 1; font-weight: 600; }
+  .lb-bar-container { flex: 2; height: 20px; background: var(--card2); border-radius: 10px; overflow: hidden; margin: 0 12px; }
+  .lb-bar { height: 100%; border-radius: 10px; transition: width 0.8s ease; }
+  .lb-share { font-weight: 700; min-width: 50px; text-align: right; }
+
+  .cred-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; max-width: 500px; }
+  .cred-chip { font-size: 0.75rem; padding: 4px 10px; border-radius: 8px; background: var(--card); }
+
+  .auto-next { font-size: 0.8rem; color: var(--text-dim); margin-top: 8px; }
+
+  /* Game over */
+  #gameOver { gap: 20px; }
+  .winner-crown { font-size: 3rem; }
+  .winner-party { font-size: 2rem; font-weight: 800; }
+
+  .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--red); color: #fff; padding: 12px 24px; border-radius: 12px; font-weight: 600; z-index: 9999; display: none; font-size: 0.9rem; }
   .toast.show { display: block; animation: slideDown 0.3s; }
   @keyframes slideDown { from { opacity: 0; top: 0; } to { opacity: 1; top: 20px; } }
-
-  /* Pin colors */
-  .pin-player { filter: hue-rotate(260deg); }
-  .pin-actual { filter: hue-rotate(90deg); }
 </style>
 </head>
 <body>
 
 <div id="toast" class="toast"></div>
 
-<!-- ── Home ── -->
 <div id="home" class="screen active">
-  <h1>GeoPin</h1>
-  <p>Pin cities on the map. Closest pin wins.</p>
-  <div class="home-buttons">
-    <button class="btn btn-primary" onclick="showScreen('hostScreen')">Host Game</button>
-    <button class="btn btn-secondary" onclick="showScreen('joinScreen')">Join Game</button>
+  <h1><span class="emoji">🗳️</span> Election Game</h1>
+  <p class="subtitle">Multiplayer Indian politics strategy</p>
+  <div class="home-btns">
+    <button class="btn btn-accent" onclick="showScreen('hostScreen')">Host</button>
+    <button class="btn btn-blue" onclick="showScreen('joinScreen')">Join</button>
   </div>
 </div>
 
-<!-- ── Host ── -->
 <div id="hostScreen" class="screen">
-  <h2>Host a Game</h2>
   <div class="form-card">
-    <div class="input-group">
-      <label>Your Name</label>
-      <input type="text" id="hostName" placeholder="Enter name" maxlength="20" />
-    </div>
-    <button class="btn btn-primary" onclick="createRoom()">Create Room</button>
+    <div class="form-label">Your Name</div>
+    <input type="text" id="hostName" placeholder="Enter name" maxlength="20" />
+    <button class="btn btn-accent" onclick="createRoom()">Create Room</button>
   </div>
   <span class="back-link" onclick="showScreen('home')">← Back</span>
 </div>
 
-<!-- ── Join ── -->
 <div id="joinScreen" class="screen">
-  <h2>Join a Game</h2>
   <div class="form-card">
-    <div class="input-group">
-      <label>Your Name</label>
-      <input type="text" id="joinName" placeholder="Enter name" maxlength="20" />
-    </div>
-    <div class="input-group">
-      <label>Room Code</label>
-      <input type="text" id="joinCode" placeholder="ABCDE" maxlength="5" style="text-transform:uppercase;letter-spacing:6px;font-size:1.4rem;" />
-    </div>
-    <button class="btn btn-primary" onclick="joinRoom()">Join</button>
+    <div class="form-label">Your Name</div>
+    <input type="text" id="joinName" placeholder="Enter name" maxlength="20" />
+    <div class="form-label">Room Code</div>
+    <input type="text" id="joinCode" placeholder="ABCDE" maxlength="5" style="text-transform:uppercase;letter-spacing:6px;font-size:1.4rem;" />
+    <button class="btn btn-accent" onclick="joinRoom()">Join</button>
   </div>
   <span class="back-link" onclick="showScreen('home')">← Back</span>
 </div>
 
-<!-- ── Lobby ── -->
 <div id="lobby" class="screen">
-  <h2>Waiting Room</h2>
+  <h2>Pick Your Party</h2>
   <div class="room-code" id="lobbyCode"></div>
-  <p style="color:var(--text-dim);font-size:0.9rem;">Share this code with friends</p>
-  <div class="player-chips" id="playerChips"></div>
-  <p id="waitMsg">Waiting for host to start...</p>
+  <p class="subtitle">Share this code with friends (2-6 players)</p>
+  <div class="party-grid" id="partyGrid"></div>
+  <div class="lobby-players" id="lobbyPlayers"></div>
   <button class="btn btn-green" id="startBtn" style="display:none;" onclick="startGame()">Start Game</button>
 </div>
 
-<!-- ── Game (Map) ── -->
 <div id="game" class="screen">
-  <div class="game-header">
-    <span class="round-info" id="roundInfo">Round 1/10</span>
-    <span class="city-question" id="cityQuestion">Pin: ???</span>
-    <span class="timer" id="timer">15</span>
+  <div class="game-top">
+    <span class="round-label" id="roundLabel">Round 1/5</span>
+    <span class="game-timer" id="gameTimer">60</span>
   </div>
-  <div id="map"></div>
-  <div class="confirm-bar">
-    <span class="status" id="pinStatus">Tap the map to place your pin</span>
-    <button class="btn btn-green" id="confirmBtn" disabled onclick="confirmGuess()">Confirm Pin</button>
-    <span class="guess-count-bar" id="guessCount"></span>
-  </div>
+  <div class="game-body" id="gameBody"></div>
 </div>
 
-<!-- ── Round Results ── -->
 <div id="results" class="screen">
   <h2 id="resultsTitle">Round Results</h2>
-  <div class="results-city" id="resultsCity"></div>
-  <div id="resultsMap"></div>
-  <table class="results-table" id="resultsTable"></table>
-  <button class="btn btn-primary" id="nextRoundBtn" style="display:none;" onclick="nextRound()">Next Round →</button>
-  <span id="waitNextMsg" style="color:var(--text-dim);font-size:0.9rem;"></span>
+  <div id="resultsIssue" style="color:var(--text-dim);font-size:0.9rem;text-align:center;"></div>
+  <div class="results-positions" id="resultsPositions"></div>
+  <div class="leaderboard" id="leaderboard"></div>
+  <div class="cred-row" id="credRow"></div>
+  <div class="auto-next" id="autoNext">Next round in 8s...</div>
 </div>
 
-<!-- ── Game Over ── -->
 <div id="gameOver" class="screen">
-  <h2>Game Over!</h2>
-  <div class="winner-name" id="winnerName"></div>
-  <p style="color:var(--text-dim);">🏆 Winner!</p>
-  <table class="final-table" id="finalTable"></table>
-  <button class="btn btn-primary" onclick="location.reload()">Play Again</button>
+  <div class="winner-crown">👑</div>
+  <div class="winner-party" id="winnerParty"></div>
+  <p class="subtitle">wins the election!</p>
+  <div class="leaderboard" id="finalLeaderboard"></div>
+  <button class="btn btn-accent" onclick="location.reload()">Play Again</button>
 </div>
 
 <script>
-// ── State ───────────────────────────────────────────────────────────
-let ws, map, marker, resultsMapObj;
-let myRole = null; // "host" | "player"
-let myGuess = null;
-let confirmed = false;
-let timerInterval = null;
-const PIN_COLORS = ["#7c3aed","#ef4444","#10b981","#f59e0b","#3b82f6","#ec4899","#14b8a6","#f97316"];
+let ws, myPlayerId = null, myParty = null, isHost = false;
+let parties = {}, timerInterval = null, selectedPosition = null, confirmed = false;
 
-// ── Screens ─────────────────────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
   document.getElementById(id).classList.add("active");
-  if (id === "game" && !map) initMap();
 }
-
 function toast(msg) {
-  const t = document.getElementById("toast");
-  t.textContent = msg;
-  t.classList.add("show");
+  const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 3000);
 }
 
-// ── WebSocket ───────────────────────────────────────────────────────
 function connect() {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  const url = `${proto}//${location.host}`;
   return new Promise((resolve, reject) => {
-    try {
-      ws = new WebSocket(url);
-    } catch (e) {
-      toast("Cannot connect — is the server running?");
-      return reject(e);
-    }
-    ws.onopen = () => {
-      console.log("WebSocket connected");
-      resolve();
-    };
-    ws.onerror = (e) => {
-      console.error("WebSocket error", e);
-      toast("Connection failed — make sure the server is running (npm start)");
-      reject(e);
-    };
-    ws.onclose = () => toast("Disconnected from server");
+    try { ws = new WebSocket(`${proto}//${location.host}`); } catch(e) { toast("Cannot connect"); return reject(e); }
+    ws.onopen = () => resolve();
+    ws.onerror = () => { toast("Connection failed"); reject(); };
+    ws.onclose = () => toast("Disconnected");
     ws.onmessage = (e) => handleMsg(JSON.parse(e.data));
   });
 }
@@ -243,229 +212,230 @@ function connect() {
 function handleMsg(msg) {
   switch (msg.type) {
     case "roomCreated":
+      myPlayerId = msg.playerId;
+      isHost = true;
       document.getElementById("lobbyCode").textContent = msg.code;
       document.getElementById("startBtn").style.display = "inline-block";
-      document.getElementById("waitMsg").textContent = "Waiting for players to join...";
       showScreen("lobby");
       break;
-
     case "joined":
+      myPlayerId = msg.playerId;
       document.getElementById("lobbyCode").textContent = msg.code;
       document.getElementById("startBtn").style.display = "none";
-      document.getElementById("waitMsg").textContent = "Waiting for host to start...";
       showScreen("lobby");
       break;
-
     case "error":
-      toast(msg.msg);
+      toast(msg.msg); break;
+    case "lobbyUpdate":
+      renderLobby(msg); break;
+    case "gameStart":
+      parties = msg.parties;
+      showScreen("game");
       break;
-
-    case "playerList": {
-      const chips = document.getElementById("playerChips");
-      chips.innerHTML = msg.players.map(p =>
-        `<div class="player-chip">${p.name}</div>`
-      ).join("");
-      break;
-    }
-
     case "newRound":
-      startRound(msg);
-      break;
-
-    case "guessAck":
+      renderRound(msg); break;
+    case "positionAck":
       confirmed = true;
-      document.getElementById("pinStatus").textContent = "✓ Pin locked in!";
-      document.getElementById("confirmBtn").disabled = true;
+      document.querySelectorAll(".pos-option").forEach(el => el.classList.add("locked"));
       break;
-
-    case "guessCount":
-      document.getElementById("guessCount").textContent = `${msg.count}/${msg.total} guessed`;
+    case "submitCount":
+      const sc = document.getElementById("submitCount");
+      if (sc) sc.textContent = `${msg.count}/${msg.total} locked in`;
       break;
-
     case "roundResults":
-      showResults(msg);
-      break;
-
+      renderResults(msg); break;
     case "gameOver":
-      showGameOver(msg);
-      break;
-
-    case "hostLeft":
-      toast("Host left the game");
-      setTimeout(() => location.reload(), 2000);
-      break;
+      renderGameOver(msg); break;
   }
 }
 
-// ── Host / Join ─────────────────────────────────────────────────────
 async function createRoom() {
   const name = document.getElementById("hostName").value.trim();
   if (!name) return toast("Enter your name");
-  myRole = "host";
-  try {
-    await connect();
-    ws.send(JSON.stringify({ type: "createRoom" }));
-  } catch (e) {
-    console.error("Create room failed:", e);
-  }
+  try { await connect(); ws.send(JSON.stringify({ type: "createRoom", name })); } catch(e) {}
 }
-
 async function joinRoom() {
   const name = document.getElementById("joinName").value.trim();
   const code = document.getElementById("joinCode").value.trim().toUpperCase();
   if (!name) return toast("Enter your name");
-  if (!code || code.length < 5) return toast("Enter a valid room code");
-  myRole = "player";
-  try {
-    await connect();
-    ws.send(JSON.stringify({ type: "joinRoom", code, name }));
-  } catch (e) {
-    console.error("Join room failed:", e);
-  }
+  if (code.length < 5) return toast("Enter room code");
+  try { await connect(); ws.send(JSON.stringify({ type: "joinRoom", code, name })); } catch(e) {}
+}
+function startGame() { ws.send(JSON.stringify({ type: "startGame" })); }
+
+function renderLobby(msg) {
+  parties = msg.parties;
+  const grid = document.getElementById("partyGrid");
+  const available = new Set(msg.availableParties);
+  const takenBy = {};
+  msg.players.forEach(p => { if (p.party) takenBy[p.party] = p.name; });
+
+  // Find my current party
+  const me = msg.players.find(p => p.id === myPlayerId);
+  myParty = me?.party || null;
+
+  grid.innerHTML = Object.entries(msg.parties).map(([key, p]) => {
+    const isMine = key === myParty;
+    const taken = !available.has(key) && !isMine;
+    const baseTxt = p.baseBlocs ? p.baseBlocs.join(', ') : '';
+    return `<div class="party-card ${isMine ? 'selected' : ''} ${taken ? 'taken' : ''}" onclick="pickParty('${key}')">
+      <div><span class="party-dot" style="background:${p.color}"></span><span class="party-name">${p.name}</span></div>
+      <div class="party-tag" style="font-size:0.65rem;color:var(--text-dim);margin-top:2px;">${p.fullName || ''}</div>
+      <div class="party-tag">${p.tagline}</div>
+      ${baseTxt ? `<div class="party-tag" style="color:var(--accent);font-size:0.65rem;">Base: ${baseTxt}</div>` : ''}
+      ${taken ? `<div class="party-tag" style="color:var(--red);">Taken by ${takenBy[key]}</div>` : ''}
+    </div>`;
+  }).join("");
+
+  const playersEl = document.getElementById("lobbyPlayers");
+  playersEl.innerHTML = msg.players.map(p =>
+    `<span class="lobby-player">${p.name}${p.party ? ' (' + msg.parties[p.party].name + ')' : ' — picking...'}</span>`
+  ).join("");
+
+  if (isHost) document.getElementById("startBtn").style.display = "inline-block";
 }
 
-function startGame() {
-  ws.send(JSON.stringify({ type: "startGame" }));
+function pickParty(key) {
+  ws.send(JSON.stringify({ type: "pickParty", party: key }));
 }
 
-function nextRound() {
-  ws.send(JSON.stringify({ type: "nextRound" }));
-}
-
-// ── Map ─────────────────────────────────────────────────────────────
-function initMap() {
-  map = L.map("map", {
-    center: [20, 0], zoom: 2, minZoom: 2, maxZoom: 12,
-    worldCopyJump: true, zoomControl: false
-  });
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-    attribution: '© OpenStreetMap © CARTO',
-    maxZoom: 19
-  }).addTo(map);
-  L.control.zoom({ position: "bottomright" }).addTo(map);
-
-  map.on("click", (e) => {
-    if (confirmed) return;
-    myGuess = { lat: e.latlng.lat, lng: e.latlng.lng };
-    if (marker) map.removeLayer(marker);
-    marker = L.circleMarker([e.latlng.lat, e.latlng.lng], {
-      radius: 10, color: "#7c3aed", fillColor: "#a78bfa", fillOpacity: 0.9, weight: 3
-    }).addTo(map);
-    document.getElementById("confirmBtn").disabled = false;
-    document.getElementById("pinStatus").textContent = "Pin placed! Confirm or move it.";
-  });
-}
-
-function confirmGuess() {
-  if (!myGuess) return;
-  ws.send(JSON.stringify({ type: "guess", lat: myGuess.lat, lng: myGuess.lng }));
-}
-
-// ── Round ───────────────────────────────────────────────────────────
-function startRound(msg) {
-  myGuess = null;
-  confirmed = false;
-  if (marker && map) map.removeLayer(marker);
-  marker = null;
-
+function renderRound(msg) {
   showScreen("game");
-  setTimeout(() => { if (map) map.invalidateSize(); }, 100);
-  map.setView([20, 0], 2);
+  selectedPosition = null;
+  confirmed = false;
 
-  document.getElementById("roundInfo").textContent = `Round ${msg.round}/${msg.total}`;
-  document.getElementById("cityQuestion").textContent = `📍 Pin: ${msg.city}, ${msg.country}`;
-  document.getElementById("pinStatus").textContent = "Tap the map to place your pin";
-  document.getElementById("confirmBtn").disabled = true;
-  document.getElementById("guessCount").textContent = "";
+  document.getElementById("roundLabel").textContent = `Round ${msg.round}/${msg.total}`;
 
+  const body = document.getElementById("gameBody");
+  let html = "";
+
+  // Event banner
+  if (msg.event) {
+    html += `<div class="event-banner">⚡ ${msg.event.text}</div>`;
+  }
+
+  // Issue card
+  const myInfo = msg.playerInfo[myParty] || {};
+  const myPartyData = parties[myParty] || {};
+  const baseText = myPartyData.baseBlocs ? myPartyData.baseBlocs.join(', ') : '';
+  html += `<div class="issue-card">
+    <div class="issue-axis">${msg.issue.axis}</div>
+    <div class="issue-title">${msg.issue.title}</div>
+    <div class="issue-dna">Your DNA position: ${myInfo.dna || '?'} | Credibility: ${myInfo.credibility || 10}</div>
+    ${baseText ? `<div class="issue-dna" style="color:var(--accent);">Your base: ${baseText}</div>` : ''}
+  </div>`;
+
+  // Position picker
+  html += `<div class="position-picker">`;
+  msg.issue.positions.forEach((text, i) => {
+    const posVal = i + 1;
+    const isDna = posVal === myInfo.dna;
+    html += `<div class="pos-option" data-pos="${posVal}" onclick="selectPosition(${posVal})">
+      <span class="pos-num">${posVal}</span>
+      <span>${text}</span>
+      ${isDna ? '<span class="pos-dna-marker">★ DNA</span>' : ''}
+    </div>`;
+  });
+  html += `</div>`;
+
+  // Confirm row
+  html += `<div class="confirm-row">
+    <button class="btn btn-green btn-sm" id="confirmBtn" disabled onclick="confirmPosition()">Lock In</button>
+    <span class="submit-count" id="submitCount"></span>
+  </div>`;
+
+  // Voter blocs panel
+  html += `<div class="blocs-panel">
+    <div class="blocs-title">Voter Blocs — preference on "${msg.issue.axis}" axis</div>
+    <div class="blocs-grid">`;
+  msg.voterBlocs.forEach(b => {
+    html += `<div class="bloc-item"><span>${b.name} (${b.size}%)</span><span class="bloc-pref">wants: ${b.prefs[msg.issue.axis]}</span></div>`;
+  });
+  html += `</div></div>`;
+
+  body.innerHTML = html;
+
+  // Timer
   let t = msg.timeLimit;
-  const timerEl = document.getElementById("timer");
-  timerEl.textContent = t;
-  timerEl.classList.remove("urgent");
+  const timerEl = document.getElementById("gameTimer");
+  timerEl.textContent = t; timerEl.classList.remove("urgent");
   clearInterval(timerInterval);
   timerInterval = setInterval(() => {
     t--;
     timerEl.textContent = t;
     if (t <= 5) timerEl.classList.add("urgent");
-    if (t <= 0) {
-      clearInterval(timerInterval);
-      // auto-submit if pin placed but not confirmed
-      if (myGuess && !confirmed) confirmGuess();
-    }
+    if (t <= 0) clearInterval(timerInterval);
   }, 1000);
 }
 
-// ── Results ─────────────────────────────────────────────────────────
-function showResults(msg) {
-  clearInterval(timerInterval);
+function selectPosition(pos) {
+  if (confirmed) return;
+  selectedPosition = pos;
+  document.querySelectorAll(".pos-option").forEach(el => {
+    el.classList.toggle("selected", parseInt(el.dataset.pos) === pos);
+  });
+  document.getElementById("confirmBtn").disabled = false;
+}
+
+function confirmPosition() {
+  if (confirmed || selectedPosition == null) return;
+  ws.send(JSON.stringify({ type: "submitPosition", position: selectedPosition }));
+}
+
+function renderResults(msg) {
   showScreen("results");
+  clearInterval(timerInterval);
 
   document.getElementById("resultsTitle").textContent = `Round ${msg.round}/${msg.total}`;
-  document.getElementById("resultsCity").textContent = `📍 ${msg.city.name}, ${msg.city.country}`;
+  document.getElementById("resultsIssue").textContent = msg.issue.title;
 
-  // Mini results map
-  if (resultsMapObj) resultsMapObj.remove();
-  resultsMapObj = L.map("resultsMap", { zoomControl: false, attributionControl: false })
-    .setView([msg.city.lat, msg.city.lng], 3);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom: 19 }).addTo(resultsMapObj);
+  // Show positions
+  const posEl = document.getElementById("resultsPositions");
+  posEl.innerHTML = Object.entries(msg.positions).map(([pk, pos]) => {
+    const p = parties[pk];
+    return `<div class="result-chip" style="background:${p.color}22;border:1px solid ${p.color}">
+      <span style="color:${p.color}">${p.name}</span>
+      <span class="result-pos">${pos}</span>
+    </div>`;
+  }).join("");
 
-  // Actual city marker (star)
-  L.circleMarker([msg.city.lat, msg.city.lng], {
-    radius: 10, color: "#10b981", fillColor: "#10b981", fillOpacity: 1, weight: 3
-  }).addTo(resultsMapObj).bindTooltip("Actual", { permanent: true, className: "" });
+  // Leaderboard
+  renderLeaderboard("leaderboard", msg.leaderboard);
 
-  // Player pins
-  const bounds = [[msg.city.lat, msg.city.lng]];
-  msg.results.forEach((r, i) => {
-    if (r.guessLat !== null) {
-      const color = PIN_COLORS[i % PIN_COLORS.length];
-      L.circleMarker([r.guessLat, r.guessLng], {
-        radius: 7, color, fillColor: color, fillOpacity: 0.8, weight: 2
-      }).addTo(resultsMapObj).bindTooltip(r.name, { permanent: false });
-      L.polyline([[msg.city.lat, msg.city.lng], [r.guessLat, r.guessLng]], {
-        color, weight: 1, dashArray: "4 4", opacity: 0.5
-      }).addTo(resultsMapObj);
-      bounds.push([r.guessLat, r.guessLng]);
-    }
-  });
-  if (bounds.length > 1) resultsMapObj.fitBounds(bounds, { padding: [30, 30] });
+  // Credibility
+  const credEl = document.getElementById("credRow");
+  credEl.innerHTML = Object.entries(msg.credibility).map(([pk, cred]) => {
+    const p = parties[pk];
+    const color = cred >= 7 ? "var(--green)" : cred >= 4 ? "var(--accent)" : "var(--red)";
+    return `<span class="cred-chip" style="border-left:3px solid ${color}">${p.name}: ${cred}</span>`;
+  }).join("");
 
-  // Table
-  const table = document.getElementById("resultsTable");
-  table.innerHTML = `<tr><th>#</th><th>Player</th><th>Distance</th><th>Points</th><th>Total</th></tr>`;
-  msg.results.forEach((r, i) => {
-    const rank = i === 0 ? 'class="rank-1"' : "";
-    const dist = r.distance !== null ? `<span class="dist-val">${r.distance.toLocaleString()} km</span>` : `<span class="no-guess">No guess</span>`;
-    table.innerHTML += `<tr ${rank}>
-      <td>${i + 1}</td><td>${r.name}</td><td>${dist}</td>
-      <td><span class="score-val">+${r.roundScore}</span></td>
-      <td>${r.totalScore.toLocaleString()}</td>
-    </tr>`;
-  });
-
-  // Next round button (host only)
-  document.getElementById("nextRoundBtn").style.display = myRole === "host" ? "inline-block" : "none";
-  document.getElementById("waitNextMsg").textContent = myRole === "host" ? "" : "Waiting for host...";
+  document.getElementById("autoNext").textContent = msg.round < msg.total ? "Next round in 8s..." : "";
 }
 
-// ── Game Over ───────────────────────────────────────────────────────
-function showGameOver(msg) {
-  clearInterval(timerInterval);
-  showScreen("gameOver");
-
-  const lb = msg.leaderboard;
-  document.getElementById("winnerName").textContent = lb[0]?.name || "???";
-  const medals = ["🥇", "🥈", "🥉"];
-  const table = document.getElementById("finalTable");
-  table.innerHTML = lb.map((p, i) => `
-    <tr>
-      <td class="rank"><span class="medal">${medals[i] || (i + 1)}</span></td>
-      <td>${p.name}</td>
-      <td class="pts">${p.score.toLocaleString()}</td>
-    </tr>
+function renderLeaderboard(containerId, leaderboard) {
+  const maxShare = Math.max(...leaderboard.map(l => l.share), 1);
+  const el = document.getElementById(containerId);
+  el.innerHTML = leaderboard.map((l, i) => `
+    <div class="lb-row">
+      <span class="lb-rank">${i + 1}</span>
+      <span class="lb-party" style="color:${l.color}">${l.name}</span>
+      <div class="lb-bar-container">
+        <div class="lb-bar" style="width:${(l.share / maxShare) * 100}%;background:${l.color}"></div>
+      </div>
+      <span class="lb-share">${l.share}%</span>
+    </div>
   `).join("");
 }
-</script>
 
+function renderGameOver(msg) {
+  showScreen("gameOver");
+  clearInterval(timerInterval);
+  const winner = msg.leaderboard[0];
+  document.getElementById("winnerParty").textContent = winner.name;
+  document.getElementById("winnerParty").style.color = winner.color;
+  renderLeaderboard("finalLeaderboard", msg.leaderboard);
+}
+</script>
 </body>
 </html>
